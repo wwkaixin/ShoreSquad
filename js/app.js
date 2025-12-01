@@ -117,30 +117,39 @@ function getMockEvents() {
     return [
         {
             id: 1,
-            title: 'Bondi Beach Cleanup',
+            title: 'Pasir Ris Beach Cleanup',
             date: '2025-12-05',
             time: '09:00',
-            location: 'Bondi Beach, Sydney',
+            location: 'Pasir Ris Beach, Singapore',
             participants: 24,
-            weather: '☀️ Sunny, 24°C'
+            weather: '⛈️ Thundery Showers, 33°C'
         },
         {
             id: 2,
-            title: 'Manly Cove Clean Squad',
+            title: 'East Coast Park Clean Squad',
             date: '2025-12-08',
             time: '10:00',
-            location: 'Manly Beach, Sydney',
+            location: 'East Coast Park, Singapore',
             participants: 18,
-            weather: '⛅ Partly Cloudy, 22°C'
+            weather: '⛈️ Thundery Showers, 33°C'
         },
         {
             id: 3,
-            title: 'Sunrise Beach Mission',
+            title: 'Sentosa Beach Mission',
             date: '2025-12-10',
             time: '06:30',
-            location: 'Sunrise Beach, QLD',
+            location: 'Sentosa Island, Singapore',
             participants: 32,
-            weather: '🌤️ Clear, 26°C'
+            weather: '⛈️ Thundery Showers, 34°C'
+        },
+        {
+            id: 4,
+            title: 'Changi Beach Cleanup',
+            date: '2025-12-12',
+            time: '08:00',
+            location: 'Changi Beach, Singapore',
+            participants: 15,
+            weather: '🌤️ Partly Cloudy, 32°C'
         }
     ];
 }
@@ -303,27 +312,120 @@ function animateCounter(element, target) {
 }
 
 /* ===================================
-   Weather Widget
+   Weather Widget - NEA API Integration
    =================================== */
 function initWeather() {
     const weatherWidget = document.getElementById('weatherWidget');
     if (!weatherWidget) return;
     
-    // Simulate weather data (in production, use a weather API)
-    setTimeout(() => {
-        const weatherData = getMockWeather();
-        renderWeather(weatherData);
-    }, 1500);
+    // Fetch real weather data from NEA API
+    fetchNEAWeather();
 }
 
-function getMockWeather() {
-    return {
-        temp: 24,
-        condition: 'Sunny',
-        windSpeed: 12,
-        uvIndex: 7,
-        icon: '☀️'
-    };
+async function fetchNEAWeather() {
+    const weatherInfo = document.querySelector('.weather-info');
+    if (!weatherInfo) return;
+    
+    try {
+        // Fetch 4-day weather forecast from NEA
+        const forecastResponse = await fetch('https://api-open.data.gov.sg/v2/real-time/api/four-day-outlook');
+        const forecastData = await forecastResponse.json();
+        
+        console.log('Weather data:', forecastData); // Debug logging
+        
+        // Fetch current weather readings
+        const currentResponse = await fetch('https://api-open.data.gov.sg/v2/real-time/api/air-temperature');
+        const currentData = await currentResponse.json();
+        
+        console.log('Temperature data:', currentData); // Debug logging
+        
+        // Get temperature from available stations
+        const temperature = getCurrentTemperature(currentData);
+        
+        renderWeatherForecast(forecastData, temperature);
+    } catch (error) {
+        console.error('Error fetching weather data:', error);
+        weatherInfo.innerHTML = '<p class="error">Unable to load weather data. Check console for details.</p>';
+    }
+}
+
+function getCurrentTemperature(data) {
+    if (!data || !data.data || !data.data.records || data.data.records.length === 0) {
+        return 28; // Default fallback
+    }
+    
+    const records = data.data.records;
+    
+    // Try to find Pasir Ris station (S109), otherwise use first available
+    const pasirRisStation = records.find(r => 
+        r.stationId === 'S109' || (r.stationId && r.stationId.toLowerCase().includes('pasir'))
+    );
+    
+    if (pasirRisStation && pasirRisStation.value) {
+        return Math.round(pasirRisStation.value);
+    }
+    
+    // Use first available reading
+    return records[0]?.value ? Math.round(records[0].value) : 28;
+}
+
+function renderWeatherForecast(forecastData, currentTemp) {
+    const weatherInfo = document.querySelector('.weather-info');
+    if (!weatherInfo) return;
+    
+    const data = forecastData.data;
+    if (!data || !data.records || data.records.length === 0) {
+        weatherInfo.innerHTML = '<p class="error">No forecast data available</p>';
+        return;
+    }
+    
+    const forecasts = data.records[0].forecasts || [];
+    
+    weatherInfo.innerHTML = `
+        <div class="weather-current">
+            <span class="weather-icon" aria-hidden="true">🌤️</span>
+            <span class="weather-temp">${currentTemp}°C</span>
+        </div>
+        <p class="weather-condition">Current Temperature</p>
+        
+        <div class="forecast-divider"></div>
+        <h4 class="forecast-title">4-Day Forecast</h4>
+        
+        <div class="forecast-days">
+            ${forecasts.slice(0, 4).map(day => {
+                const dayName = day.day;
+                const icon = getWeatherIcon(day.forecast.text);
+                
+                return `
+                    <div class="forecast-day">
+                        <div class="forecast-day-name">${dayName}</div>
+                        <div class="forecast-icon">${icon}</div>
+                        <div class="forecast-temp">
+                            <span class="temp-high">${day.temperature.high}°</span>
+                            <span class="temp-low">${day.temperature.low}°</span>
+                        </div>
+                        <div class="forecast-description">${day.forecast.summary}</div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+    
+    addWeatherStyles();
+}
+
+function getWeatherIcon(forecast) {
+    if (!forecast) return '☀️';
+    const condition = forecast.toLowerCase();
+    
+    if (condition.includes('thunder') || condition.includes('storm')) return '⛈️';
+    if (condition.includes('heavy rain')) return '🌧️';
+    if (condition.includes('showers') || condition.includes('rain')) return '🌦️';
+    if (condition.includes('cloudy')) return '☁️';
+    if (condition.includes('partly cloudy') || condition.includes('fair')) return '⛅';
+    if (condition.includes('hazy')) return '🌫️';
+    if (condition.includes('windy')) return '💨';
+    return '☀️'; // Default sunny
 }
 
 function renderWeather(data) {
@@ -365,12 +467,69 @@ function addWeatherStyles() {
         }
         .weather-condition {
             text-align: center;
-            font-size: 1.25rem;
-            margin-bottom: 1rem;
-        }
-        .weather-details p {
-            margin: 0.5rem 0;
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
             color: #666;
+        }
+        .forecast-divider {
+            height: 1px;
+            background: #ddd;
+            margin: 1rem 0;
+        }
+        .forecast-title {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            color: var(--neutral-dark);
+            text-align: center;
+        }
+        .forecast-days {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .forecast-day {
+            display: grid;
+            grid-template-columns: 3fr 2fr 3fr;
+            gap: 0.5rem;
+            align-items: center;
+            padding: 0.75rem;
+            background: rgba(0, 168, 232, 0.05);
+            border-radius: 8px;
+            transition: var(--transition);
+        }
+        .forecast-day:hover {
+            background: rgba(0, 168, 232, 0.1);
+        }
+        .forecast-day-name {
+            font-weight: 600;
+            color: var(--neutral-dark);
+        }
+        .forecast-icon {
+            font-size: 1.5rem;
+            text-align: center;
+        }
+        .forecast-temp {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            font-weight: 600;
+        }
+        .temp-high {
+            color: var(--alert-coral);
+        }
+        .temp-low {
+            color: var(--primary-blue);
+        }
+        .forecast-description {
+            grid-column: 1 / -1;
+            font-size: 0.85rem;
+            color: #666;
+            text-align: center;
+        }
+        .weather-info .error {
+            color: var(--alert-coral);
+            text-align: center;
+            padding: 1rem;
         }
     `;
     if (!document.querySelector('#weather-styles')) {
